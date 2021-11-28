@@ -1,6 +1,6 @@
-# Chalmers Cup in Self-driving
+# Chalmers Cup in Self-driving: Team Crash
 
-Please change the branch to use one of our provided templates.
+The fast.
 
 ## Python
 
