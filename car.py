@@ -38,6 +38,7 @@ def CannyEdge(image):
     cannyImage = cv2.Canny(blur, 50, 150)
     return cannyImage
 
+
 def region_of_interest(image):
     height = image.shape[0]
     rectangle = np.array([[(0, height),(0, 50), (160,50), (160, height),]], np.int32)
@@ -46,6 +47,7 @@ def region_of_interest(image):
     masked_image = cv2.bitwise_and(image, mask)
     return masked_image
 
+
 def make_points(image, line_parameters):
     slope, intercept = line_parameters
     y1 = int(image.shape[0])
@@ -53,6 +55,7 @@ def make_points(image, line_parameters):
     x1 = int((y1 - intercept)/slope)
     x2 = int((y2 - intercept)/slope)
     return [[x1, y1, x2, y2]]
+
 
 def average_slope_intercept(image, lines):
     left_fit = []
@@ -76,6 +79,7 @@ def average_slope_intercept(image, lines):
     print("Right line: " + str(right_line))
     return np.array((left_line, right_line))
 
+
 def line_intersection(lines):
     line1 = ([lines[0][0][0],lines[0][0][1]],[lines[0][0][2],lines[0][0][3]])
     line2 = ([lines[1][0][0],lines[1][0][1]],[lines[1][0][2],lines[1][0][3]])
@@ -87,7 +91,7 @@ def line_intersection(lines):
 
     div = det(xdiff, ydiff)
     if div == 0:
-       raise Exception('lines do not intersect')
+       raise Exception("Lines do not intersect")
 
     d = (det(*line1), det(*line2))
     x = det(d, xdiff) / div
@@ -99,7 +103,6 @@ def line_intersection(lines):
 
 def on_open(ws):
     def run(*args):
-        # your car logic here
 
         cap = cv2.VideoCapture(video_address)
 
@@ -108,55 +111,68 @@ def on_open(ws):
         width = frame.shape[1]
 
         capture = cv2.VideoCapture(video_address)
-  
+
+        timer = time.time()
         
+        angle = 0.0
         throttle = 0.2
         while True:
             ret, frame = cap.read()
 
-            gray = CannyEdge(frame)
+            try:
+                gray = CannyEdge(frame)
 
-            cropped_video = region_of_interest(gray)
-            rho = 2
-            theta = np.pi/180
-            threshold = 50
-            lines = cv2.HoughLinesP(cropped_video,rho, theta, threshold, np.array ([]), minLineLength=5, maxLineGap=5)
-            averaged_lines = average_slope_intercept(frame, lines)
-            line_image = display_lines(frame, averaged_lines)
-            #avg_image = display_lines(frame, averaged_lines[1]-averaged_lines[0])
-            combo_image = cv2.addWeighted(frame, 0.8, line_image, 1, 1)
-            #print(averaged_lines)
-            #print("Average: " + str(averaged_lines[1]-averaged_lines[0]))
-            print("Intersection: " + str(averaged_lines))
-            
-            cv2.imshow('Lane Lines', line_image)
-            #cv2.imshow("Avg video", avg_image)
-            cv2.imshow("Wombo Combo", combo_image)
-            cv2.imshow("Cropped video", cropped_video)
+                # The track was extreamly wide at some parts so decided not to crop
+                # the video for better predictions
 
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
+                #cropped_video = region_of_interest(gray)
+                cropped_video = gray
 
-            opposite, adjacent = line_intersection(averaged_lines)
+                rho = 2
+                theta = np.pi/180
+                threshold = 50
+                lines = cv2.HoughLinesP(cropped_video,rho, theta, threshold, np.array ([]), minLineLength=5, maxLineGap=5)
+                averaged_lines = average_slope_intercept(frame, lines)
+                line_image = display_lines(frame, averaged_lines)
+                combo_image = cv2.addWeighted(frame, 0.8, line_image, 1, 1)
 
-            opposite -= 80
+                # Just a bunch of different videos to better understand how good 
+                # our vechicle sees track and objects
+                cv2.imshow('Lane Lines', line_image)
+                cv2.imshow("Wombo Combo", combo_image)
+                cv2.imshow("Cropped video", cropped_video)
 
-            arctan = np.arctan(opposite/adjacent)
-            print("Arctan: " + str(arctan))
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    break
+                
+                # Want to calculate angle between car and intersect point
+                opposite, adjacent = line_intersection(averaged_lines)
+                # Vehicle is always in the middle, hence the -80 part to calculate opposite side
+                opposite -= 80
+                arctan = np.arctan(opposite/adjacent)
+                
+                #print("Arctan: " + str(arctan))
 
-            if arctan > 0: angle = 0.2
-            else: angle = -0.2
 
-            # do something based on the frame
-            #angle = 0.0
-            
+                # Was supposed to implement it so the wheels angle gradiently increased depending 
+                # on the angle between the car and the intersect point but ran out of time and battery
+                if arctan > 0: angle = 0.3
+                else: angle = -0.3
+
+            # If the car can't see any lines and calculate an intersect point it will turn around
+            except:
+                if time.time() - timer > 1.5:
+                    angle = -angle
+                    timer = time.time()
+                    
 
             message = f"{{\"angle\":{angle},\"throttle\":{throttle},\"drive_mode\":\"user\",\"recording\":false}}"
             ws.send(message)
             print(message)
+            
 
-        #angle = 0.0
-        #throttle = 0.0
+        angle = 0.0
+        throttle = 0.0
         message = f"{{\"angle\":{angle},\"throttle\":{throttle},\"drive_mode\":\"user\",\"recording\":false}}"
         ws.send(message)
         print(message)
